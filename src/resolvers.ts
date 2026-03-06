@@ -2,6 +2,7 @@ import {createHash} from "node:crypto";
 import {extname, join} from "node:path/posix";
 import type {DuckDBConfig} from "./config.js";
 import {cacheDuckDBExtension} from "./duckdb.js";
+import {isSystemError} from "./error.js";
 import {findAssets} from "./html.js";
 import {defaultGlobals} from "./javascript/globals.js";
 import {isJavaScript} from "./javascript/imports.js";
@@ -50,6 +51,10 @@ const defaultImports = [
   "observablehq:runtime", // Runtime
   "observablehq:stdlib" // Standard library
 ];
+
+function extractPackageSpecifier(path: string): string {
+  return path.startsWith("/_node/") ? extractNodeSpecifier(path) : `npm:${extractNpmSpecifier(path)}`;
+}
 
 export const builtins = new Map<string, string>([
   ["@observablehq/runtime", "/_observablehq/runtime.js"],
@@ -281,7 +286,7 @@ async function resolveResolvers(
       for (const i of await resolvePackageImports(root, value)) {
         if (i.type === "local") {
           const path = resolvePath(value, i.name);
-          const specifier = path.startsWith("/_node/") ? extractNodeSpecifier(path) : `npm:${extractNpmSpecifier(path)}`;
+          const specifier = extractPackageSpecifier(path);
           globalImports.add(specifier);
           resolutions.set(specifier, path);
         }
@@ -302,7 +307,7 @@ async function resolveResolvers(
       for (const i of await resolvePackageImports(root, value)) {
         if (i.type === "local") {
           const path = resolvePath(value, i.name);
-          const specifier = path.startsWith("/_node/") ? extractNodeSpecifier(path) : `npm:${extractNpmSpecifier(path)}`;
+          const specifier = extractPackageSpecifier(path);
           globalImports.add(specifier);
           resolutions.set(specifier, path);
         }
@@ -323,7 +328,7 @@ async function resolveResolvers(
       for (const i of await resolvePackageImports(root, value)) {
         if (i.type === "local" && i.method === "static") {
           const path = resolvePath(value, i.name);
-          const specifier = path.startsWith("/_node/") ? extractNodeSpecifier(path) : `npm:${extractNpmSpecifier(path)}`;
+          const specifier = extractPackageSpecifier(path);
           staticImports.add(specifier);
           staticResolutions.set(specifier, path);
         }
@@ -344,7 +349,7 @@ async function resolveResolvers(
       for (const i of await resolvePackageImports(root, value)) {
         if (i.type === "local" && i.method === "static") {
           const path = resolvePath(value, i.name);
-          const specifier = path.startsWith("/_node/") ? extractNodeSpecifier(path) : `npm:${extractNpmSpecifier(path)}`;
+          const specifier = extractPackageSpecifier(path);
           staticImports.add(specifier);
           staticResolutions.set(specifier, path);
         }
@@ -375,6 +380,7 @@ async function resolveResolvers(
           resolutions.set(specifier, path);
           await ensurePackageCache(root, path);
         } catch (error) {
+          if (!isSystemError(error) || error.code !== "MODULE_NOT_FOUND") throw error;
           const fallback = "npm:parquet-wasm/esm/arrow2_bg.wasm";
           globalImports.add(fallback);
           const path = await resolvePackageImport(root, fallback.slice("npm:".length));
@@ -398,12 +404,12 @@ async function resolveResolvers(
     return isPathImport(specifier)
       ? relativePath(path, loaders.resolveImportPath(resolvePath(path, specifier)))
       : builtins.has(specifier)
-      ? relativePath(path, builtins.get(specifier)!)
-      : specifier.startsWith("observablehq:")
-      ? relativePath(path, `/_observablehq/${specifier.slice("observablehq:".length)}${extname(specifier) ? "" : ".js"}`) // prettier-ignore
-      : resolutions.has(specifier)
-      ? relativePath(path, resolutions.get(specifier)!)
-      : specifier;
+        ? relativePath(path, builtins.get(specifier)!)
+        : specifier.startsWith("observablehq:")
+          ? relativePath(path, `/_observablehq/${specifier.slice("observablehq:".length)}${extname(specifier) ? "" : ".js"}`) // prettier-ignore
+          : resolutions.has(specifier)
+            ? relativePath(path, resolutions.get(specifier)!)
+            : specifier;
   }
 
   function resolveFile(specifier: string): string {
@@ -414,10 +420,10 @@ async function resolveResolvers(
     return isPathImport(specifier)
       ? relativePath(path, resolveStylesheetPath(root, resolvePath(path, specifier)))
       : specifier.startsWith("observablehq:")
-      ? relativePath(path, `/_observablehq/${specifier.slice("observablehq:".length)}`)
-      : resolutions.has(specifier)
-      ? relativePath(path, resolutions.get(specifier)!)
-      : specifier;
+        ? relativePath(path, `/_observablehq/${specifier.slice("observablehq:".length)}`)
+        : resolutions.has(specifier)
+          ? relativePath(path, resolutions.get(specifier)!)
+          : specifier;
   }
 
   function resolveScript(src: string): string {
@@ -480,7 +486,7 @@ export async function getModuleStaticImports(root: string, path: string): Promis
       for (const o of await resolvePackageImports(root, p)) {
         if (o.type === "local") {
           const path = resolvePath(p, o.name);
-          const specifier = path.startsWith("/_node/") ? extractNodeSpecifier(path) : `npm:${extractNpmSpecifier(path)}`;
+          const specifier = extractPackageSpecifier(path);
           globalImports.add(specifier);
         }
       }
@@ -494,7 +500,7 @@ export async function getModuleStaticImports(root: string, path: string): Promis
       for (const o of await resolvePackageImports(root, p)) {
         if (o.type === "local") {
           const path = resolvePath(p, o.name);
-          const specifier = path.startsWith("/_node/") ? extractNodeSpecifier(path) : `npm:${extractNpmSpecifier(path)}`;
+          const specifier = extractPackageSpecifier(path);
           globalImports.add(specifier);
         }
       }
@@ -520,14 +526,14 @@ export function getModuleResolver(
     return isPathImport(specifier)
       ? relativePath(servePath, resolveImportPath(root, resolvePath(path, specifier), getHash))
       : builtins.has(specifier) || specifier.startsWith("observablehq:")
-      ? relativePath(servePath, resolveBuiltin(specifier))
-      : specifier.startsWith("npm:")
-      ? relativePath(servePath, await resolvePackageImport(root, specifier.slice("npm:".length)))
-      : specifier.startsWith("jsr:")
-      ? relativePath(servePath, await resolveJsrImport(root, specifier.slice("jsr:".length)))
-      : !/^\w+:/.test(specifier)
-      ? relativePath(servePath, await resolvePackageImport(root, specifier))
-      : specifier;
+        ? relativePath(servePath, resolveBuiltin(specifier))
+        : specifier.startsWith("npm:")
+          ? relativePath(servePath, await resolvePackageImport(root, specifier.slice("npm:".length)))
+          : specifier.startsWith("jsr:")
+            ? relativePath(servePath, await resolveJsrImport(root, specifier.slice("jsr:".length)))
+            : !/^\w+:/.test(specifier)
+              ? relativePath(servePath, await resolvePackageImport(root, specifier))
+              : specifier;
   };
 }
 

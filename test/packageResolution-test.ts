@@ -63,6 +63,9 @@ describe("resolvePackageImport(root, specifier) in local mode", () => {
   it("resolves a different package to a local node path", async () => {
     assert.strictEqual(await resolvePackageImport(testRoot, "mime"), "/_node/mime@4.0.6/index.js");
   });
+  it("throws on a non-existent package", async () => {
+    await assert.rejects(() => resolvePackageImport(testRoot, "nonexistent-package-xyz-abc"), /Cannot find module/);
+  });
 });
 
 describe("resolvePackageImports(root, path)", () => {
@@ -85,31 +88,34 @@ describe("resolvePackageImports(root, path)", () => {
   });
 });
 
+describe("resolvePackageImports(root, path) in CDN mode for /_npm/ paths", () => {
+  mockJsDelivr();
+  before(() => setLocalNpmResolve(false));
+  after(() => setLocalNpmResolve(false));
+  const root = "test/input/build/simple";
+  it("uses npm resolution for /_npm/ paths in CDN mode", async () => {
+    const npmPath = await resolvePackageImport(root, "d3-array");
+    const result = await resolvePackageImports(root, npmPath);
+    assert.ok(Array.isArray(result));
+  });
+});
+
 describe("ensurePackageCache(root, path)", () => {
   const root = "test/output/package-resolution-cache"; // unique to this test
   after(() => setLocalNpmResolve(false));
   it("returns a local cache path for /_node/ paths in CDN mode", async () => {
     setLocalNpmResolve(false);
     const path = "/_node/d3-array@3.2.4/index.js";
-    assert.strictEqual(
-      await ensurePackageCache(root, path),
-      join(root, ".observablehq", "cache", path)
-    );
+    assert.strictEqual(await ensurePackageCache(root, path), join(root, ".observablehq", "cache", path));
   });
   it("returns a local cache path for /_node/ paths in local mode", async () => {
     setLocalNpmResolve(true);
     const path = "/_node/d3-array@3.2.4/index.js";
-    assert.strictEqual(
-      await ensurePackageCache(root, path),
-      join(root, ".observablehq", "cache", path)
-    );
+    assert.strictEqual(await ensurePackageCache(root, path), join(root, ".observablehq", "cache", path));
   });
   it("returns a local cache path for /_npm/ paths in local mode", async () => {
     setLocalNpmResolve(true);
     const path = "/_npm/d3-array@3.2.4/_esm.js";
-    assert.strictEqual(
-      await ensurePackageCache(root, path),
-      join(root, ".observablehq", "cache", path)
-    );
+    assert.strictEqual(await ensurePackageCache(root, path), join(root, ".observablehq", "cache", path));
   });
 });

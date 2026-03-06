@@ -208,6 +208,13 @@ describe("normalizeConfig(spec, root)", () => {
   it("populates default pager", () => {
     assert.strictEqual(config({pages: []}, root).pager, true);
   });
+  it("defaults localNpmResolve to false", () => {
+    assert.strictEqual(config({pages: []}, root).localNpmResolve, false);
+  });
+  it("coerces localNpmResolve to boolean", () => {
+    assert.strictEqual(config({localNpmResolve: 1, pages: []}, root).localNpmResolve, true);
+    assert.strictEqual(config({localNpmResolve: 0, pages: []}, root).localNpmResolve, false);
+  });
 });
 
 describe("normalizePath(path) with {cleanUrls: false} (deprecated)", () => {

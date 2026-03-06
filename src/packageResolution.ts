@@ -3,8 +3,9 @@ import op from "node:path";
 import {join} from "node:path/posix";
 import {packageDirectory} from "pkg-dir";
 import type {ImportReference} from "./javascript/imports.js";
-import {parseNpmSpecifier, populateNpmCache, resolveNpmImport, resolveNpmImports} from "./npm.js";
 import {resolveNodeImportFrom, resolveNodeImports} from "./node.js";
+import {parseNpmSpecifier, populateNpmCache, resolveNpmImport, resolveNpmImports} from "./npm.js";
+import {faint, yellow} from "./tty.js";
 
 let localNpmResolve = false;
 let loggedLocalMode = false;
@@ -17,7 +18,7 @@ export function setLocalNpmResolve(value: boolean): void {
 function logLocalMode(): void {
   if (!localNpmResolve || loggedLocalMode) return;
   loggedLocalMode = true;
-  console.log("[observable] npm resolution: local (node_modules)");
+  console.log(`npm resolution: local ${faint("(node_modules)")}`);
 }
 
 function toLocalSpecifier(specifier: string): string {
@@ -30,7 +31,14 @@ function toLocalSpecifier(specifier: string): string {
 async function findPackageRoot(root: string): Promise<string> {
   const rootPath = op.resolve(root);
   const pkgRoot = await packageDirectory({cwd: rootPath});
-  if (pkgRoot) return pkgRoot;
+  if (pkgRoot) {
+    if (pkgRoot !== rootPath) {
+      process.stderr.write(
+        `${yellow("Warning:")} localNpmResolve: package root resolved to ${pkgRoot} (differs from ${rootPath})\n`
+      );
+    }
+    return pkgRoot;
+  }
   let current = rootPath;
   while (true) {
     if (existsSync(op.join(current, "node_modules"))) return current;
@@ -59,5 +67,7 @@ export async function resolvePackageImports(root: string, path: string): Promise
 
 export async function ensurePackageCache(root: string, path: string): Promise<string> {
   logLocalMode();
-  return localNpmResolve || path.startsWith("/_node/") ? join(root, ".observablehq", "cache", path) : populateNpmCache(root, path);
+  return localNpmResolve || path.startsWith("/_node/")
+    ? join(root, ".observablehq", "cache", path)
+    : populateNpmCache(root, path);
 }

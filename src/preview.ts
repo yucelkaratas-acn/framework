@@ -17,7 +17,7 @@ import {WebSocketServer} from "ws";
 import type {Config} from "./config.js";
 import {readConfig} from "./config.js";
 import {getDuckDBManifest} from "./duckdb.js";
-import {enoent, isEnoent, isHttpError, isSystemError} from "./error.js";
+import {enoent, HttpError, isEnoent, isHttpError, isSystemError} from "./error.js";
 import {getClientPath} from "./files.js";
 import type {FileWatchers} from "./fileWatchers.js";
 import {isComment, isElement, isText, parseHtml, rewriteHtml} from "./html.js";
@@ -148,7 +148,8 @@ export class PreviewServer {
       } else if (pathname.startsWith("/_node/") || pathname.startsWith("/_jsr/") || pathname.startsWith("/_duckdb/")) {
         send(req, pathname, {root: join(root, ".observablehq", "cache")}).pipe(res);
       } else if (pathname.startsWith("/_npm/")) {
-        if (isLocalNpmMode()) throw new Error("Local npm resolution is enabled; /_npm requests are not supported.");
+        if (isLocalNpmMode())
+          throw new HttpError("Local npm resolution is enabled; /_npm requests are not supported.", 400);
         await populateNpmCache(root, pathname);
         send(req, pathname, {root: join(root, ".observablehq", "cache")}).pipe(res);
       } else if (pathname.startsWith("/_import/")) {
@@ -462,10 +463,10 @@ function serializeHtml(node: ChildNode): HtmlPart | undefined {
   return isElement(node)
     ? {type: 1, value: node.outerHTML}
     : isText(node)
-    ? {type: 3, value: node.nodeValue!}
-    : isComment(node)
-    ? {type: 8, value: node.data}
-    : undefined;
+      ? {type: 3, value: node.nodeValue!}
+      : isComment(node)
+        ? {type: 8, value: node.data}
+        : undefined;
 }
 
 function getHtml({body}: MarkdownPage, resolvers: Resolvers): HtmlPart[] {
